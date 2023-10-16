@@ -4,38 +4,6 @@ const { ethers } = require("ethers");
 import { encodeFunctionData, getAddress } from "viem";
 var storageabi = [
   {
-    inputs: [
-      {
-        internalType: "uint256",
-        name: "num",
-        type: "uint256",
-      },
-    ],
-    name: "store",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      {
-        internalType: "string",
-        name: "input",
-        type: "string",
-      },
-    ],
-    name: "voucher",
-    outputs: [
-      {
-        internalType: "string",
-        name: "",
-        type: "string",
-      },
-    ],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
     inputs: [],
     name: "retrieve",
     outputs: [
@@ -46,6 +14,19 @@ var storageabi = [
       },
     ],
     stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "num",
+        type: "uint256",
+      },
+    ],
+    name: "store",
+    outputs: [],
+    stateMutability: "nonpayable",
     type: "function",
   },
 ];
@@ -69,8 +50,8 @@ async function handle_advance(data) {
   if (payload == "0x766f7563686572") {
     const call = encodeFunctionData({
       abi: storageabi,
-      functionName: "voucher",
-      args: ["this is a dummy voucher"],
+      functionName: "store",
+      args: [123124554],
     });
     voucher = {
       destination: storage_address, // dapp Address
@@ -121,7 +102,7 @@ async function handle_inspect(data) {
     },
     body: JSON.stringify({ payload }),
   });
-  console.log("Received report status " + inspect_req.status);
+  console.log("Adding report with" + inspect_req.status);
   return "accept";
 }
 
