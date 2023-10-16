@@ -117,21 +117,79 @@ You can check the final version of the index file after the following steps in t
 3. Add a new default handler for `advance` requests (input txs)
 
    ```typescript
-   app.addAdvanceHandler(async ({ payload }) => {
-     console.log("Received advance request data " + JSON.stringify(payload));
-     const { functionName, args } = decodeFunctionData({ abi, data: payload });
-     switch (functionName) {
-       case "balanceOf":
-         const [userAddr] = args;
-         console.log(`The ${userAddr} balance is...`);
-         return "accept";
-
-       case "sayHello":
-         console.log(`Hello!"`);
-         return "accept";
+   async function handle_advance(data) {
+     console.log("Received advance request data " + JSON.stringify(data));
+     const payload = data["payload"];
+     try {
+       const payloadStr = ethers.utils.toUtf8String(payload);
+       console.log(`Adding notice "${payloadStr}"`);
+     } catch (e) {
+       console.log(`Adding notice with binary value "${payload}"`);
      }
-   });
+     let advance_req;
+     if (payload == "0x766f7563686572") {
+       const call = encodeFunctionData({
+         abi: storageabi,
+         functionName: "store",
+         args: [123124554],
+       });
+       voucher = {
+         destination: storage_address, // dapp Address
+         payload: call,
+       };
+       console.log(voucher);
+       advance_req = await fetch(rollup_server + "/voucher", {
+         method: "POST",
+         headers: {
+           "Content-Type": "application/json",
+         },
+         body: JSON.stringify(voucher),
+       });
+       console.log("starting a voucher");
+     } else {
+       advance_req = await fetch(rollup_server + "/notice", {
+         method: "POST",
+         headers: {
+           "Content-Type": "application/json",
+         },
+         body: JSON.stringify({ payload }),
+       });
+     }
+
+     const json = await advance_req.json();
+     console.log(
+       "Received  status " +
+         advance_req.status +
+         " with body " +
+         JSON.stringify(json)
+     );
+     return "accept";
+   }
    ```
+
+4. Add a inspect handler
+
+```typescript
+async function handle_inspect(data) {
+  console.log("Received inspect request data " + JSON.stringify(data));
+  const payload = data["payload"];
+  try {
+    const payloadStr = ethers.utils.toUtf8String(payload);
+    console.log(`Adding report "${payloadStr}"`);
+  } catch (e) {
+    console.log(`Adding report with binary value "${payload}"`);
+  }
+  const inspect_req = await fetch(rollup_server + "/report", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ payload }),
+  });
+  console.log("Adding report with" + inspect_req.status);
+  return "accept";
+}
+```
 
 4. Test with an input
 
@@ -151,152 +209,5 @@ You can check the final version of the index file after the following steps in t
 
    Try by yourself to send a "sayHello" request.
 
-### 4.2 Let's play with routes
-
-Deroll comes with the option to use routes, so it's easier to manage the functions that need to act on a input.
-
-To help us to also manage funds, we are also going to use the `@deroll/wallet` library.
-
-As usual, you can find the final script at [`src/fourth.ts`](./src/fourth.ts) file in this repo.
-
-1. Import the libs
-   ```typescript
-   import { createRouter } from "@deroll/router";
-   import { createWallet } from "@deroll/wallet";
-   ```
-2. Create a wallet instance
-   ```typescript
-   const wallet = createWallet();
-   ```
-3. Create a router instance
-   ```typescript
-   const router = createRouter({ app });
-   ```
-4. Let's register the default handlers of the wallet
-
-   ```typescript
-   app.addAdvanceHandler(wallet.handler);
-   ```
-
-5. Let's handle the possible errors of ABI decoding. At the last section for the advanceHandler, add a try/catch block as such:
-
-   ```typescript
-   app.addAdvanceHandler(async ({ payload }) => {
-     try {
-       const { functionName, args } = decodeFunctionData({
-         abi,
-         data: payload,
-       });
-
-       switch (functionName) {
-         case "balanceOf":
-           const [userAddr] = args;
-           console.log(`The ${userAddr} balance is...`);
-           return "accept";
-
-         case "sayHello":
-           console.log(`Hello!"`);
-           return "accept";
-       }
-     } catch (e) {
-       console.log("error decoding function data", e);
-       return "reject";
-     }
-   });
-   ```
-
-6. Now modify the balanceOf to actually check balances. Add:
-
-   ```typescript
-   console.log(`The ${userAddr} balance is ${wallet.balanceOf(userAddr)}`);
-   ```
-
-   and you can check again that the balance was actually modified:
-
-   ```bash
-    sunodo send generic --input=0x70a08231000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266 --input-encoding=hex
-   ```
-
-7. Let's add a route on the inspect mode to check the balance.
-
-   Here is an example of a route to check the balances:
-
-   ```typescript
-   router.add<{ address: string }>(
-     "wallet/:address",
-     ({ params: { address } }) => {
-       console.log("wallet handler called", address);
-       return JSON.stringify({
-         balance: wallet.balanceOf(address).toString(),
-       });
-     }
-   );
-   ```
-
-   Add it to the routes of the app like so:
-
-   ```typescript
-   app.addInspectHandler(router.handler);
-   ```
-
-   you should be able to check the balance of the address you used before:
-
-   ```bash
-   curl http://localhost:8080/inspect/wallet/0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-   ```
-
-## 5. Changing the state
-
-Now that we learned how to send and manage the 2 types of requests, let's learn how to change the state of the application.
-
-### 5.1 Transfer of funds
-
-Final version of the script can be found at [`src/fifth.ts`](./src/fifth.ts) file in this repo.
-
-1. Make a deposit again using sunodo
-
-   > sunodo send ether --amount=10
-
-2. Add a transfer function to your advance handler
-
-   2.1 a new function to the abi
-
-   ```typescript
-   "function transfer(address to, uint256 amount)",
-   ```
-
-   2.2 a new variable at the handler definition, the `metadata`:
-
-   ```typescript
-   app.addAdvanceHandler(async ({ payload, metadata }) => {
-   ```
-
-   2.3 a new case to the switch statement
-
-   ```typescript
-   case "transfer":
-       const [to, amount] = args;
-       console.log(`Transfering ${amount} to ${to}`);
-       wallet.transferEther(metadata.msg_sender, to, amount);
-       return "accept";
-   ```
-
-3. Test the transfer function
-
-   3.1 Encode the transfer function
-
-   ```bash
-   cast calldata "transfer(address,uint256)" 0x70ac08179605AF2D9e75782b8DEcDD3c22aA4D0C 10 # this is the address of the dapp
-   ```
-
-   3.2 Send the transaction
-
-   ```bash
-   sunodo send generic --input=0xa9059cbb00000000000000000000000070ac08179605af2d9e75782b8decdd3c22aa4d0c000000000000000000000000000000000000000000000000000000000000000a
-   ```
-
-   3.3 Check the balance of the dapp address
-
-   ```bash
-   curl http://localhost:8080/inspect/wallet/0x70ac08179605AF2D9e75782b8DEcDD3c22aA4D0C
-   ```
+5. Try a frontend tool
+   https://github.com/prototyp3-dev/frontend-web-cartesi
